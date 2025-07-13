@@ -2,6 +2,20 @@
 
 set -e
 
+echo " ================================================================================================== "
+echo "    ,---.   ,--.   ,--.         ,------.   ,------. ,------.  ,--.     ,-----.  ,--.   ,--. ,------. ,------.  " 
+echo "   /  O  \\  |   '.'   | ,-----. |  .-.  \\  |  .---' |  .--. ' |  |    '  .-.  '  \\  '.'  /  |  .---' |  .--. ' "
+echo "  |  .-.  | |  |'.'|  | '-----' |  |  \\  : |  \`--,  |  '--' | |  |    |  | |  |   '.    /   |  \`--,  |  '--'.' "
+echo "  |  | |  | |  |   |  |         |  '--'  / |  \`---. |  | --'  |  '--. '  '-'  '     |  |    |  \`---. |  |\\  \\  "
+echo "  \`--' \`--' \`--'   \`--'         \`-------'  \`------' \`--'      \`-----'  \`-----'      \`--'    \`------' \`--' '--' "
+echo "                                                                                                              "
+echo "                            SCRIPTED BY: Avinash Mishra (AM - Deployer)                                      "
+echo " ================================================================================================== "
+
+
+
+
+
 # === INPUTS ===
 ENVIRONMENT=$1
 APP_NAME=$2
@@ -17,7 +31,7 @@ if [[ -z "$ENVIRONMENT" || -z "$APP_NAME" || -z "$VERSION" || -z "$ACTION" ]]; t
   echo "----------------------------------------------------"
   echo " AM-DEPLOYER USAGE:"
   echo " ./deploy.sh <environment> <app_name> <version> <action>"
-  echo " Example: ./deploy.sh prod bookings 22.1.33 start"
+  echo " Example: ./deploy.sh uat bookings 22.1.33 start"
   echo "----------------------------------------------------"
   exit 1
 fi
@@ -28,7 +42,12 @@ if [[ ! -f "$SERVER_LIST" || ! -f "$DEPLOY_MAP" ]]; then
 fi
 
 # === GET ALL VARIANTS OF THE APP ===
-mapfile -t VARIANTS < <(grep "^$APP_NAME\." "$DEPLOY_MAP")
+#mapfile -t VARIANTS < <(grep "^$APP_NAME\." "$DEPLOY_MAP")
+VARIANTS=()
+while IFS= read -r line; do
+  VARIANTS+=("$line")
+done < <(grep "^$APP_NAME\." "$DEPLOY_MAP")
+
 
 if [[ ${#VARIANTS[@]} -eq 0 ]]; then
   echo "[ERROR] No variants found for app $APP_NAME in deploy_map.conf"
