@@ -6,56 +6,73 @@ set -e
 ENVIRONMENT=$1
 APP_NAME=$2
 VERSION=$3
-
-# === VALIDATION ===
-if [[ -z "$ENVIRONMENT" || -z "$APP_NAME" || -z "$VERSION" ]]; then
-  echo "Usage: $0 <environment> <app_name> <version>"
-  echo "Example: $0 prod booking 22.1.33"
-  exit 1
-fi
+ACTION=$4
 
 CONFIG_DIR="./config"
 SERVER_LIST="$CONFIG_DIR/servers.txt"
-APP_PATHS_FILE="$CONFIG_DIR/app_paths.conf"
+DEPLOY_MAP="$CONFIG_DIR/deploy_map.conf"
 
-if [[ ! -f "$SERVER_LIST" || ! -f "$APP_PATHS_FILE" ]]; then
+# === VALIDATION ===
+if [[ -z "$ENVIRONMENT" || -z "$APP_NAME" || -z "$VERSION" || -z "$ACTION" ]]; then
+  echo "Usage: $0 <environment> <app_name> <version> <action>"
+  echo "Example: $0 prod bookings 22.1.33 start"
+  exit 1
+fi
+
+if [[ ! -f "$SERVER_LIST" || ! -f "$DEPLOY_MAP" ]]; then
   echo "Missing config files in $CONFIG_DIR"
   exit 1
 fi
 
-# === RESOLVE APPLICATION DIRECTORY ===
-APP_PATH=$(grep "^$APP_NAME=" "$APP_PATHS_FILE" | cut -d'=' -f2)
+# === GET ALL VARIANTS OF THE APP ===
+mapfile -t VARIANTS < <(grep "^$APP_NAME\." "$DEPLOY_MAP")
 
-if [[ -z "$APP_PATH" ]]; then
-  echo "Invalid app_name: $APP_NAME. Must be one of booking, rate, idsystem."
+if [[ ${#VARIANTS[@]} -eq 0 ]]; then
+  echo "No variants found for app $APP_NAME in deploy_map.conf"
   exit 1
 fi
 
-# === DEPLOY LOOP ===
+# === DEPLOY TO EACH SERVER ===
 while IFS= read -r SERVER; do
-  echo "========== Deploying to $SERVER =========="
-  
-  ssh "$SERVER" bash -c "'
-    set -e
-    echo \"[INFO] Switching to app directory: $APP_PATH\"
-    cd $APP_PATH
+  echo "========== Deploying $APP_NAME to $SERVER =========="
 
-    echo \"[INFO] Running release.sh with version: $VERSION\"
-    ./release.sh $VERSION
+  for VARIANT_LINE in "${VARIANTS[@]}"; do
+    IFS='|' read -r VARIANT_PATH DEPLOY_DIR INSTANCES <<<"$(echo "$VARIANT_LINE" | sed "s/^$APP_NAME\.//")"
 
-    echo \"[INFO] Waiting for artefact to be ready...\"
-    wait
+    echo "---- Variant: $VARIANT_PATH"
+    echo "[INFO] SSH into $SERVER and cd $DEPLOY_DIR"
 
-    cd current/build
+    ssh "$SERVER" bash -c "'
+      set -e
+      echo "[INFO] Entering directory: $DEPLOY_DIR"
+      cd $DEPLOY_DIR
 
-    for i in 1 2; do
-      echo \"[INFO] Starting instance \$i for $APP_NAME on $SERVER\"
-      ./run.sh start \$i
-    done
-  '"
-  
-  echo "✅ Deployment completed for $SERVER"
-  echo
+      echo "[INFO] Running release.sh $VERSION"
+      ./release.sh $VERSION
+      wait
+
+      cd current/build
+      echo "[INFO] In build directory: \$(pwd)"
+
+      if [[ -z "$INSTANCES" ]]; then
+        echo "[INFO] Single-instance deployment for $VARIANT_PATH"
+        ./run.sh $ACTION
+      elif [[ "$INSTANCES" == *-* ]]; then
+        IFS='-' read -r START END <<< "$INSTANCES"
+        for i in \$(seq \$START \$END); do
+          echo "[INFO] Running instance \$i for $VARIANT_PATH"
+          ./run.sh $ACTION \$i
+        done
+      else
+        echo "[INFO] Running single instance $INSTANCES"
+        ./run.sh $ACTION $INSTANCES
+      fi
+    '"
+
+    echo "Finished $VARIANT_PATH on $SERVER"
+  done
+
+  echo "All variants of $APP_NAME deployed on $SERVER"
 done < "$SERVER_LIST"
 
-echo "🎉 All deployments finished successfully!"
+echo ":-) Deployment of $APP_NAME ($VERSION) to all servers complete!"
